@@ -1,0 +1,286 @@
+// ============================================================
+// Context Builder - System prompt assembly
+// ============================================================
+
+import type { ModelInputMessage } from "@zcode/contracts";
+import type {
+  ContextMetaUserAttachment,
+  ContextSection,
+  ContextBuildResult,
+  ContextBuilderConfig,
+  EnvInfo,
+} from "./types.js";
+import type { ToolRegistry } from "../tool/registry.js";
+import { estimateTokens } from "./utils.js";
+import { buildCliPrefixSection } from "./sections/cli-prefix.js";
+import { buildIdentitySection } from "./sections/identity.js";
+import { buildWorkflowActorIdentitySection } from "./sections/workflow-actor.js";
+import { buildEnvInfoSection, buildGitSystemContextSection } from "./sections/env-info.js";
+import { buildRequestUserContextSection } from "./sections/request-user-context.js";
+
+// -----------------------------------------------
+// Context Builder
+// -----------------------------------------------
+
+const EPHEMERAL_CACHE_CONTROL = { type: "ephemeral" as const };
+export class ContextBuilder {
+  private config: ContextBuilderConfig;
+  private customSections: ContextSection[] = [];
+
+  constructor(config: ContextBuilderConfig) {
+    this.config = config;
+  }
+
+  /**
+   * 保留兼容入口。工具说明由 model request 的 tools 字段承载，不再镜像进 system prompt。
+   */
+  setToolRegistry(_registry: ToolRegistry): this {
+    return this;
+  }
+
+  setEnvInfo(envInfo: EnvInfo): this {
+    this.config = {
+      ...this.config,
+      envInfo,
+    };
+    return this;
+  }
+
+  /**
+   * 添加自定义 section（用于后续扩展）
+   */
+  addSection(
+    section: Omit<ContextSection, "chars" | "tokens" | "injectionTarget" | "cacheHint"> &
+      Partial<Pick<ContextSection, "injectionTarget" | "cacheHint">>,
+  ): this {
+    this.customSections.push({
+      ...section,
+      injectionTarget: section.injectionTarget ?? "system",
+      cacheHint: section.cacheHint ?? "dynamic",
+      chars: section.content.length,
+      tokens: estimateTokens(section.content),
+    });
+    return this;
+  }
+
+  /**
+   * 构建 context，返回结构化结果
+   */
+  build(): ContextBuildResult {
+    const sections: ContextSection[] = [];
+    const activeOutputStyle = this.config.outputStyle?.prompt.trim()
+      ? this.config.outputStyle
+      : undefined;
+    const customSystemPrompt = this.config.customSystemPrompt?.trim();
+    const hasCustomSystemPrompt = Boolean(customSystemPrompt);
+    // 工作流子代理身份：第三条路径。与
+    // customSystemPrompt 互斥——两者同在只可能是接线错误（persona 该经 workflowActor 进来，
+    // 不该再塞 systemPrompt），大声失败而不是默默二选一。
+    const workflowActor = this.config.workflowActor;
+    if (workflowActor !== undefined && hasCustomSystemPrompt) {
+      throw new Error(
+        "ContextBuilder: workflowActor and customSystemPrompt are mutually exclusive",
+      );
+    }
+    const isWorkflowActor = workflowActor !== undefined;
+
+    // 1. CLI / product prefix. Keep this as the short leading identity block.
+    // 「You are ZCode, an interactive coding agent」对一个
+    // 只对脚本说话、可能连读文件工具都没有的子代理是错的身份，且走在正确身份段前面。
+    if (!isWorkflowActor) {
+      sections.push(buildCliPrefixSection());
+    }
+
+    // 2. Stable agent behavior or custom prompt body
+    if (hasCustomSystemPrompt) {
+      sections.push(
+        createSection({
+          name: "Custom System Prompt",
+          source: "custom_system_prompt",
+          injectionTarget: "system",
+          cacheHint: "stable",
+          content: customSystemPrompt ? `\n${customSystemPrompt}` : "",
+        }),
+      );
+    } else if (workflowActor !== undefined) {
+      sections.push(buildWorkflowActorIdentitySection(workflowActor));
+    } else {
+      sections.push(buildIdentitySection(activeOutputStyle));
+    }
+
+    // 3. SCODE local context: keep only execution-relevant environment/project context.
+    if (!hasCustomSystemPrompt) {
+      sections.push(buildEnvInfoSection(this.config.envInfo));
+      const gitSystemContextSection = buildGitSystemContextSection(this.config.envInfo);
+      if (gitSystemContextSection) {
+        sections.push(gitSystemContextSection);
+      }
+    }
+
+    const requestUserContextSection = buildRequestUserContextSection({
+      userInstructions: this.config.userInstructions,
+      memoryIndexContent: undefined,
+      memoryRoot: undefined,
+    });
+    if (requestUserContextSection) {
+      sections.push(requestUserContextSection);
+    }
+
+    // 6. Custom sections
+    sections.push(...this.customSections);
+
+    const orderedSections = orderSectionsForInjection(sections);
+
+    // 计算总计
+    const totalChars = orderedSections.reduce((sum, s) => sum + s.chars, 0);
+    const totalTokens = orderedSections.reduce((sum, s) => sum + s.tokens, 0);
+
+    const systemMessages = this.assembleSystemMessages(orderedSections);
+    const metaUserAttachments = this.assembleMetaUserAttachments(orderedSections);
+
+    return {
+      sections: orderedSections,
+      totalChars,
+      totalTokens,
+      systemMessages,
+      metaUserAttachments,
+    };
+  }
+
+  private assembleSystemMessages(sections: ContextSection[]): ModelInputMessage[] {
+    const messages: ModelInputMessage[] = [];
+
+    const cliPrefixContent = buildSectionContent(
+      sections.filter(
+        (section) => section.injectionTarget === "system" && section.source === "cli_prefix",
+      ),
+    );
+    if (cliPrefixContent) {
+      messages.push({
+        role: "system",
+        content: cliPrefixContent,
+        cacheControl: EPHEMERAL_CACHE_CONTROL,
+      });
+    }
+
+    const stableBodyContent = buildSectionContent(
+      sections.filter(
+        (section) =>
+          section.injectionTarget === "system" &&
+          section.cacheHint === "stable" &&
+          section.source !== "cli_prefix",
+      ),
+    );
+    if (stableBodyContent) {
+      messages.push({
+        role: "system",
+        content: stableBodyContent,
+        cacheControl: EPHEMERAL_CACHE_CONTROL,
+      });
+    }
+
+    const dynamicSystemContent = buildSectionContent(
+      sections.filter(
+        (section) => section.injectionTarget === "system" && section.cacheHint === "dynamic",
+      ),
+    );
+    if (dynamicSystemContent) {
+      messages.push({
+        role: "system",
+        // ZCode by design：Main Agent 的 dynamic system block 自带左边界，所有 provider 保持一致。
+        content: `\n\n${dynamicSystemContent}`,
+        cacheControl: EPHEMERAL_CACHE_CONTROL,
+      });
+    }
+
+    return messages;
+  }
+
+  private assembleMetaUserAttachments(sections: ContextSection[]): ContextMetaUserAttachment[] {
+    const attachments: ContextMetaUserAttachment[] = [];
+
+    const skillsContent = buildSkillsMetaUserBody(
+      sections.filter(
+        (section) => section.injectionTarget === "meta_user" && section.source === "skills",
+      ),
+    );
+    if (skillsContent) {
+      attachments.push({
+        source: "skills_listing",
+        content: skillsContent,
+      });
+    }
+
+    const contextContent = buildContextMetaUserBody(
+      sections.filter(
+        (section) => section.injectionTarget === "meta_user" && section.source !== "skills",
+      ),
+    );
+    if (contextContent) {
+      attachments.push({
+        source: "context_prefix",
+        content: contextContent,
+      });
+    }
+
+    return attachments;
+  }
+}
+
+function orderSectionsForInjection(sections: ContextSection[]): ContextSection[] {
+  return [
+    ...sections.filter(
+      (section) => section.injectionTarget === "system" && section.cacheHint === "stable",
+    ),
+    ...sections.filter(
+      (section) => section.injectionTarget === "system" && section.cacheHint === "dynamic",
+    ),
+    ...sections.filter(
+      (section) => section.injectionTarget === "meta_user" && section.cacheHint === "stable",
+    ),
+    ...sections.filter(
+      (section) => section.injectionTarget === "meta_user" && section.cacheHint === "dynamic",
+    ),
+  ];
+}
+
+export function buildContextMetaUserBody(sections: ContextSection[]): string | null {
+  if (sections.length === 0) return null;
+  return buildSectionContent(sections);
+}
+
+export function buildSkillsMetaUserBody(sections: ContextSection[]): string | null {
+  const content = buildSectionContent(sections);
+  if (!content) {
+    return null;
+  }
+
+  return content;
+}
+
+function buildSectionContent(sections: ContextSection[]): string {
+  return sections.map((section) => section.content).join("\n\n");
+}
+
+function createSection(input: {
+  name: string;
+  source: ContextSection["source"];
+  injectionTarget: ContextSection["injectionTarget"];
+  cacheHint: ContextSection["cacheHint"];
+  content: string;
+}): ContextSection {
+  return {
+    ...input,
+    chars: input.content.length,
+    tokens: estimateTokens(input.content),
+    preview: input.content.slice(0, 100),
+  };
+}
+
+// -----------------------------------------------
+// Factory
+// -----------------------------------------------
+
+export function createContextBuilder(config: ContextBuilderConfig): ContextBuilder {
+  return new ContextBuilder(config);
+}

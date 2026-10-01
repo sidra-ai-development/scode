@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 1,
+  "revision": 32,
+  "config": {
+    "providerConfigRules": {
+      "templateRules": [],
+      "providerRules": [
+        {
+          "providerId": "scode-local-mlx",
+          "providerName": "SCODE Local MLX",
+          "config": {
+            "group": "zai-family",
+            "access": {
+              "type": "api-key",
+              "apiKey": "local"
+            },
+            "api": {
+              "type": "openai-chat-completions",
+              "baseUrl": "http://127.0.0.1:8081/v1"
+            },
+            "builtinModelIds": []
+          }
+        },
+        {
+          "providerId": "scode-local-ollama",
+          "providerName": "Ollama",
+          "config": {
+            "group": "zai-family",
+            "access": {
+              "type": "api-key",
+              "apiKey": "ollama"
+            },
+            "api": {
+              "type": "openai-chat-completions",
+              "baseUrl": "http://127.0.0.1:11434/v1"
+            },
+            "builtinModelIds": []
+          }
+        }
+      ]
+    },
+    "modelConfigRules": {
+      "modelRules": [
+        {
+          "modelMatch": ".*",
+          "config": {
+            "enabled": true,
+            "properties": {
+              "contextWindow": 200000,
+              "inputFormat": {
+                "supportsText": true,
+                "supportsImage": false,
+                "supportsVideo": false,
+                "supportsAudio": false,
+                "supportsPdf": false
+              },
+              "outputFormat": {
+                "supportsText": true
+              },
+              "supportsToolCall": true,
+              "supportsJsonSchemaOutput": false,
+              "supportsNativeWebSearch": false,
+              "supportsMidConversationSystem": false,
+              "requiresMfjsToolSchema": false
+            },
+            "optionSpecs": {
+              "maxOutputTokens": {
+                "max": 32000
+              },
+              "reasoningLevel": {
+                "values": [
+                  "disabled",
+                  "enabled"
+                ],
+                "map": "{}"
+              }
+            }
+          }
+        }
+      ],
+      "modelApiRules": [
+        {
+          "modelMatch": ".*",
+          "apiTypeMatch": "openai-chat-completions",
+          "config": {
+            "optionSpecs": {
+              "reasoningLevel": {
+                "map": "{\n  \"chat_template_kwargs\": {\n    \"enable_thinking\": reasoningLevel != \"disabled\" && reasoningLevel != \"none\"\n  }\n}"
+              },
+              "maxOutputTokens": {
+                "map": "{'max_completion_tokens': maxOutputTokens}"
+              }
+            }
+          }
+        }
+      ],
+      "providerSiteRules": [],
+      "templateModelRules": [],
+      "builtinProviderModelRules": []
+    }
+  }
+}

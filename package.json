@@ -1,0 +1,28 @@
+{
+  "name": "@sidra-ai/scode-source",
+  "version": "1.0.2",
+  "private": true,
+  "description": "SCODE - fast, persistent coding CLI runtime for AI workflows.",
+  "license": "Apache-2.0",
+  "packageManager": "pnpm@10.33.2",
+  "engines": {
+    "node": "24.14.0"
+  },
+  "scripts": {
+    "build": "turbo run build --cwd apps/scode-cli --filter=@zcode/cli...",
+    "dev": "pnpm --dir apps/scode-cli dev --"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.4",
+    "turbo": "2.9.8"
+  },
+  "pnpm": {
+    "overrides": {
+      "react": "19.2.7",
+      "react-dom": "19.2.7"
+    },
+    "patchedDependencies": {
+      "@ai-sdk/anthropic@3.0.81": "patches/@ai-sdk__anthropic@3.0.81.patch"
+    }
+  }
+}

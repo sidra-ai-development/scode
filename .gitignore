@@ -1,0 +1,24 @@
+node_modules/
+dist/
+**/dist/
+.turbo/
+**/.turbo/
+.tmp/
+**/.tmp/
+coverage/
+**/coverage/
+*.log
+.DS_Store
+.env
+.env.*
+!.env.example
+
+# Internal development context is not part of the public repository.
+.sidra/
+.mcp_backups/
+.mcp_trash/
+apps/scode-cli/AGENTS.md
+apps/scode-cli/.env.template
+
+# Release binaries are distributed separately.
+apps/scode-cli/packages/cli/release/

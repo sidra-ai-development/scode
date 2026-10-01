@@ -1,0 +1,131 @@
+import { resolveZCodeRuntimeEnv } from "@zcode/shared";
+import { createNodeClipboardImageReader } from "./clipboard-image.js";
+import { createNodeClipboardTextWriter } from "./clipboard-text.js";
+import { listSlashCommandSuggestions } from "./command-center.js";
+import { buildModelSelection } from "./command-center/selections.js";
+import { registerCliShutdownHandlers } from "./shutdown.js";
+import { loadInitialTuiSessionMetadata } from "./tui-command-data.js";
+import { createTuiSubmitPrompt } from "./tui-prompt-handler.js";
+import { loadTuiRuntime } from "./tui-runtime-loader.js";
+import { resolveTuiStartupLocale } from "./tui-startup-locale.js";
+import { createWorkspacePathSuggestionProvider } from "./tui-workspace-paths.js";
+import { resolveWorkspaceGitBranch } from "./tui-workspace-git.js";
+import { createCliModeState, currentCliMode } from "./tui-command-state.js";
+const runTuiCommand = async (ctx, options, deps, version, mode, resumeRequest, toolDisallowlist, forceMcs = false) => {
+  try {
+    const modeState = createCliModeState(mode);
+    const runTui = deps.runTui ?? (await loadTuiRuntime()).runTui;
+    const workspaceDirectory = (deps.cwd ?? process.cwd)();
+    const env = deps.env ?? process.env;
+    const developerMode = resolveZCodeRuntimeEnv(env) === "development";
+    const startupLocale = resolveTuiStartupLocale({
+      deps,
+      options,
+      workingDirectory: workspaceDirectory
+    });
+    const promptHandler = createTuiSubmitPrompt(
+      deps,
+      modeState,
+      version,
+      resumeRequest,
+      options.locale,
+      options.detectedLocale,
+      startupLocale,
+      toolDisallowlist,
+      forceMcs,
+      options.browserUse,
+      options.browserExecutable
+    );
+    const unregisterShutdownHandlers = registerCliShutdownHandlers({
+      cleanup: async () => {
+        await promptHandler.close?.();
+      },
+      cleanupTimeoutMs: deps.shutdownCleanupTimeoutMs,
+      exitProcess: deps.exitProcess,
+      process: deps.shutdownProcess
+    });
+    try {
+      return await runTui({
+        loadStartupOptions: async () => {
+          const [metadata, workspaceGitBranch] = await Promise.all([
+            loadInitialTuiSessionMetadata(promptHandler),
+            (deps.resolveWorkspaceGitBranch ?? resolveWorkspaceGitBranch)({
+              workspaceDirectory
+            }).catch(() => void 0)
+          ]);
+          const modelOptions = metadata.modelOptions ?? [];
+          const firstRunSelection = metadata.hasConfiguredDefaultModelSelection === false ? {
+            ...buildModelSelection(metadata.model, modelOptions),
+            emptyMessage: "No models detected. Configure a local model or provider, then run /model.",
+            prompt: "Choose your default model.",
+            title: "First Run · Model"
+          } : void 0;
+          return {
+            initialMode: currentCliMode(modeState),
+            initialModel: metadata.model,
+            initialThoughtLevel: metadata.thoughtLevel,
+            initialResult: firstRunSelection ? {
+              effortOptions: metadata.effortOptions,
+              loginRequired: metadata.loginRequired,
+              mode: currentCliMode(modeState),
+              model: metadata.model,
+              modelOptions,
+              response: "",
+              selection: firstRunSelection,
+              theme: metadata.theme ?? "auto",
+              thoughtLevel: metadata.thoughtLevel
+            } : void 0,
+            loginRequired: metadata.loginRequired,
+            locale: metadata.locale ?? startupLocale,
+            theme: metadata.theme ?? "auto",
+            modelOptions,
+            effortOptions: metadata.effortOptions,
+            slashCommands: listSlashCommandSuggestions(),
+            workspaceGitBranch
+          };
+        },
+        locale: startupLocale,
+        developerMode,
+        version,
+        workspaceDirectory,
+        noColor: options.noColor,
+        readClipboardImage: deps.readClipboardImage ?? createNodeClipboardImageReader(),
+        listEffortOptions: promptHandler.listEffortOptions,
+        listModelOptions: promptHandler.listModelOptions,
+        listWorkspacePathSuggestions: createWorkspacePathSuggestionProvider({
+          workspaceDirectory
+        }),
+        listMcpServers: promptHandler.listMcpServers,
+        readSubagents: promptHandler.readSubagents,
+        readSubagentTranscript: promptHandler.readSubagentTranscript,
+        listWorkflowRuns: promptHandler.listWorkflowRuns,
+        replayWorkflowRuns: promptHandler.replayWorkflowRuns,
+        getMainSessionId: promptHandler.getMainSessionId,
+        writeClipboardText: deps.writeClipboardText ?? createNodeClipboardTextWriter({ stdout: ctx.stdout }),
+        stderr: ctx.stderr,
+        stdin: ctx.stdin,
+        stdout: ctx.stdout,
+        recallPreviousInput: promptHandler.recallPreviousInput,
+        sendInput: promptHandler.sendInput,
+        setMode: promptHandler.setMode,
+        submitPrompt: promptHandler,
+        subscribeSessionEvents: promptHandler.subscribeSessionEvents
+      });
+    } finally {
+      unregisterShutdownHandlers();
+      await promptHandler.close?.();
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    ctx.stderr.write(`Error: ${message}
+`);
+    if (options.verbose && error instanceof Error && error.stack) {
+      ctx.stderr.write(`${error.stack}
+`);
+    }
+    return 1;
+  }
+};
+export {
+  runTuiCommand
+};
