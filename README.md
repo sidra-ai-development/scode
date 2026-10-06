@@ -145,7 +145,7 @@ SCODE does **not** require SIDRA OS. It is an independent open-source project.
 
 SCODE focuses on persistent coding execution.
 
-[SIDRA OS](https://github.com/mohamedfrahat32-cmd/chat-to-agent) is the broader execution layer that can connect AI clients to the computer itself: files, terminal, browser, computer control, project memory, system tools, channels, and additional runtimes.
+[SIDRA OS](https://github.com/sidra-ai-development/unlimited-coding) is the broader execution layer that can connect AI clients to the computer itself: files, terminal, browser, computer control, project memory, system tools, channels, and additional runtimes.
 
 SCODE can connect to SIDRA OS through MCP, so the two can be used together:
 
@@ -175,10 +175,13 @@ That gives you two clean modes:
 The integration is optional. SCODE remains fully usable as a standalone CLI.
 
 **SIDRA OS repository:**  
-https://github.com/mohamedfrahat32-cmd/chat-to-agent
+https://github.com/sidra-ai-development/unlimited-coding
 
 **SIDRA OS website:**  
-https://sidra-ai.com/sidra-os
+https://agent.sidra-ai.com/
+
+**Start SIDRA OS:**  
+https://agent.sidra-ai.com/start
 
 ## Why SCODE
 
@@ -202,7 +205,7 @@ Requirements:
 - pnpm 10.33.2
 
 ```bash
-git clone https://github.com/mohamedfrahat32-cmd/scode.git
+git clone https://github.com/sidra-ai-development/scode.git
 cd scode
 pnpm install --frozen-lockfile
 pnpm build
@@ -244,4 +247,4 @@ SCODE contains code derived from ZCode. Upstream and third-party notices are pre
 
 ---
 
-Built by [SIDRA Development](https://sidra-ai.com/).
+Built by [SIDRA AI Development](https://agent.sidra-ai.com/).
