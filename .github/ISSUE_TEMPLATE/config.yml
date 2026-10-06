@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and ideas
+    url: https://github.com/sidra-ai-development/scode/discussions
+    about: Ask questions, share workflows, and discuss ideas with the SCODE community.
+  - name: SIDRA OS
+    url: https://github.com/sidra-ai-development/sidra-os
+    about: For the broader SIDRA OS execution layer, use the SIDRA OS repository.
