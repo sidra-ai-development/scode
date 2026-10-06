@@ -145,7 +145,7 @@ SCODE does **not** require SIDRA OS. It is an independent open-source project.
 
 SCODE focuses on persistent coding execution.
 
-[SIDRA OS](https://github.com/sidra-ai-development/unlimited-coding) is the broader execution layer that can connect AI clients to the computer itself: files, terminal, browser, computer control, project memory, system tools, channels, and additional runtimes.
+[SIDRA OS](https://github.com/sidra-ai-development/sidra-os) is the broader execution layer that can connect AI clients to the computer itself: files, terminal, browser, computer control, project memory, system tools, channels, and additional runtimes.
 
 SCODE can connect to SIDRA OS through MCP, so the two can be used together:
 
@@ -175,7 +175,7 @@ That gives you two clean modes:
 The integration is optional. SCODE remains fully usable as a standalone CLI.
 
 **SIDRA OS repository:**  
-https://github.com/sidra-ai-development/unlimited-coding
+https://github.com/sidra-ai-development/sidra-os
 
 **SIDRA OS website:**  
 https://agent.sidra-ai.com/
